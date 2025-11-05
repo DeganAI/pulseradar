@@ -1,0 +1,23 @@
+{
+  "name": "pulseradar",
+  "version": "1.0.0",
+  "description": "Endpoint discovery and trust scoring for x402 ecosystem",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "type-check": "tsc --noEmit",
+    "db:create": "wrangler d1 create pulseradar-db",
+    "db:migrate": "wrangler d1 migrations apply pulseradar-db",
+    "db:local": "wrangler d1 migrations apply pulseradar-db --local"
+  },
+  "keywords": ["x402", "cloudflare-workers", "trust-scoring"],
+  "author": "DegenLlama.net",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.80.0"
+  }
+}

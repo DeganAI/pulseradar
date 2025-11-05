@@ -1,0 +1,27 @@
+name = "pulseradar-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-27"
+node_compat = true
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "pulseradar-db"
+database_id = "" # Replace with your database ID after running: wrangler d1 create pulseradar-db
+
+# Environment variables (set these in Cloudflare dashboard or wrangler secret)
+[vars]
+ENVIRONMENT = "production"
+
+# Cron triggers for background jobs
+[triggers]
+crons = [
+  "0 */6 * * *",   # Discovery job - every 6 hours
+  "*/30 * * * *",  # Testing job - every 30 minutes
+  "0 * * * *"      # Trust calculation - every hour
+]
+
+# Routes (custom domain - optional)
+# [[routes]]
+# pattern = "pulseradar.yourdomain.com/*"
+# zone_name = "yourdomain.com"

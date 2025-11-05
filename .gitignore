@@ -1,0 +1,39 @@
+# Sensitive files - DO NOT COMMIT
+.dev.vars
+*.env
+.env
+.env.*
+DEPLOYMENT-SUMMARY.md
+
+# Wrangler - use example file instead
+wrangler.toml
+
+# Node
+node_modules/
+.npm-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# TypeScript
+*.tsbuildinfo
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Wrangler state
+.wrangler/

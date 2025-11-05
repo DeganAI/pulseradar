@@ -1,0 +1,11 @@
+# PulseRadar Local Development Environment Variables
+# Copy this to .dev.vars and fill in your values
+
+# Your internal API key for free access
+INTERNAL_API_KEY=your-dev-key-here
+
+# x402 facilitator URL for payment verification
+FACILITATOR_URL=https://facilitator.daydreams.systems
+
+# Environment
+ENVIRONMENT=development
