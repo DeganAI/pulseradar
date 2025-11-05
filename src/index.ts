@@ -30,6 +30,35 @@ function isInternalRequest(request: Request, env: Env): boolean {
 }
 
 /**
+ * Create x402 payment required response
+ */
+function createPaymentRequiredResponse(amount: string, facilitatorUrl: string): Response {
+  const paymentResponse = {
+    error: 'Payment Required',
+    protocol: 'x402',
+    amount: amount,
+    currency: 'USDC',
+    facilitator: facilitatorUrl,
+    payTo: '0x01D11F7e1a46AbFC6092d7be484895D2d505095c',
+    network: 'base',
+    asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    instructions: `Payment of ${amount} USDC required via x402 protocol`,
+  };
+
+  return new Response(JSON.stringify(paymentResponse), {
+    status: 402,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Accept-Payment': 'USDC',
+      'X-Payment-Amount': amount,
+      'X-Payment-Facilitator': facilitatorUrl,
+      'X-Payment-Address': '0x01D11F7e1a46AbFC6092d7be484895D2d505095c',
+      'X-Payment-Network': 'base',
+    },
+  });
+}
+
+/**
  * Check if request has valid x402 payment
  */
 async function hasValidPayment(request: Request, requiredAmount: number): Promise<boolean> {
@@ -67,10 +96,8 @@ async function handleDiscover(request: Request, env: Env): Promise<Response> {
     if (!isInternal) {
       const hasPayment = await hasValidPayment(request, 0.50);
       if (!hasPayment) {
-        return new Response(JSON.stringify({
-          error: 'Payment required: $0.50 USDC',
-          details: 'Use x402 protocol headers: X-Payment-Proof, X-Payment-Amount',
-        }), { status: 402, headers: { 'Content-Type': 'application/json' } });
+        const facilitatorUrl = env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
+        return createPaymentRequiredResponse('0.50', facilitatorUrl);
       }
     }
 
@@ -152,9 +179,8 @@ async function handleTrustScore(request: Request, env: Env): Promise<Response> {
     if (!isInternal) {
       const hasPayment = await hasValidPayment(request, 0.50);
       if (!hasPayment) {
-        return new Response(JSON.stringify({
-          error: 'Payment required: $0.50 USDC',
-        }), { status: 402, headers: { 'Content-Type': 'application/json' } });
+        const facilitatorUrl = env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
+        return createPaymentRequiredResponse('0.50', facilitatorUrl);
       }
     }
 
@@ -233,9 +259,8 @@ async function handleVerifyLive(request: Request, env: Env): Promise<Response> {
     if (!isInternal) {
       const hasPayment = await hasValidPayment(request, 0.50);
       if (!hasPayment) {
-        return new Response(JSON.stringify({
-          error: 'Payment required: $0.50 USDC',
-        }), { status: 402, headers: { 'Content-Type': 'application/json' } });
+        const facilitatorUrl = env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
+        return createPaymentRequiredResponse('0.50', facilitatorUrl);
       }
     }
 
@@ -311,9 +336,8 @@ async function handleCompare(request: Request, env: Env): Promise<Response> {
     if (!isInternal) {
       const hasPayment = await hasValidPayment(request, 0.50);
       if (!hasPayment) {
-        return new Response(JSON.stringify({
-          error: 'Payment required: $0.50 USDC',
-        }), { status: 402, headers: { 'Content-Type': 'application/json' } });
+        const facilitatorUrl = env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
+        return createPaymentRequiredResponse('0.50', facilitatorUrl);
       }
     }
 
@@ -453,6 +477,93 @@ export default {
         response.headers.set(key, value)
       );
       return response;
+    }
+
+    // Internal admin endpoints (require API key)
+    if (url.pathname === '/internal/trigger-discovery' && request.method === 'POST') {
+      if (!isInternalRequest(request, env)) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      try {
+        console.log('Manual discovery trigger requested');
+        const result = await runDiscovery(env);
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Discovery completed',
+          total_discovered: result.total_discovered,
+          new_endpoints: result.new_endpoints,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      } catch (error: any) {
+        console.error('Manual discovery failed:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message,
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+    }
+
+    if (url.pathname === '/internal/trigger-testing' && request.method === 'POST') {
+      if (!isInternalRequest(request, env)) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      try {
+        console.log('Manual testing trigger requested');
+        const result = await testAllEndpoints(env, 50);
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Testing completed',
+          total_tested: result.total_tested,
+          successful: result.successful,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      } catch (error: any) {
+        console.error('Manual testing failed:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message,
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+    }
+
+    if (url.pathname === '/internal/trigger-trust-score' && request.method === 'POST') {
+      if (!isInternalRequest(request, env)) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      try {
+        console.log('Manual trust score calculation requested');
+        const calculated = await calculateAllTrustScores(env);
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Trust scores calculated',
+          endpoints_calculated: calculated,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      } catch (error: any) {
+        console.error('Manual trust score calculation failed:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message,
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
     }
 
     // Default response
