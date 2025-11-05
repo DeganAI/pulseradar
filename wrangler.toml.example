@@ -21,6 +21,16 @@ crons = [
   "0 * * * *"      # Trust calculation - every hour
 ]
 
+# Observability configuration
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
 # Routes (custom domain - optional)
 # [[routes]]
 # pattern = "pulseradar.yourdomain.com/*"
