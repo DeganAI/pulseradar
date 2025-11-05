@@ -1,57 +1,119 @@
 /**
  * Discovery Engine - Finds x402 endpoints from various sources
+ *
+ * TODO: Implement proper x402index.com integration with payment
+ * - Use https://www.x402index.com/api/all with X-PAYMENT header
+ * - Cost: $0.01 USDC per discovery run on Base network
+ * - This is the official, maintained registry
+ *
+ * Current implementation uses free seed list + GitHub discovery as temporary workaround
  */
 
 import type { Env, DiscoveryResult, AgentManifest } from '../types';
 
 /**
- * Discover endpoints from x402scan.org
+ * Seed list of known x402 agents
+ * TODO: Replace with x402index.com API once payment integration is implemented
  */
-export async function discoverFromX402Scan(): Promise<DiscoveryResult[]> {
-  try {
-    // x402scan API endpoint (if available) or scrape the website
-    // For now, we'll fetch the public registry
+const KNOWN_X402_AGENTS = [
+  // Your own services
+  'https://pulseradar-proxy-production.up.railway.app',
+  'https://gasroute-bounty-production.up.railway.app',
 
-    const response = await fetch('https://www.x402scan.com/api/agents', {
+  // Known x402 ecosystem services
+  'https://lending-liquidation-sentinel-production.up.railway.app',
+  'https://yield-pool-watcher-production.up.railway.app',
+  'https://lp-impermanent-loss-estimator-production-62b5.up.railway.app',
+  'https://perps-funding-pulse-production.up.railway.app',
+  'https://cross-dex-arbitrage-production.up.railway.app',
+  'https://portfolio-scanner-production.up.railway.app',
+  'https://pulseapi-production.up.railway.app',
+
+  // Add more known agents here as discovered
+];
+
+/**
+ * Discover endpoints from seed list
+ * This is a temporary solution until x402index payment integration is complete
+ */
+export async function discoverFromSeedList(): Promise<DiscoveryResult[]> {
+  const results: DiscoveryResult[] = [];
+
+  console.log(`Checking ${KNOWN_X402_AGENTS.length} seed endpoints...`);
+
+  for (const url of KNOWN_X402_AGENTS) {
+    try {
+      const manifest = await fetchAgentManifest(url);
+      if (manifest) {
+        results.push({
+          url,
+          name: manifest.name || 'Unknown Agent',
+          description: manifest.description || null,
+          author: manifest.author || null,
+          organization: manifest.organization || null,
+          source: 'seed_list',
+        });
+        console.log(`✓ Found: ${manifest.name} at ${url}`);
+      } else {
+        console.log(`✗ No manifest: ${url}`);
+      }
+    } catch (error) {
+      console.error(`Error checking ${url}:`, error);
+    }
+  }
+
+  console.log(`Seed list discovery: ${results.length}/${KNOWN_X402_AGENTS.length} active`);
+  return results;
+}
+
+/**
+ * Discover endpoints from x402 ecosystem pages (scraping fallback)
+ * TODO: Remove once x402index.com integration is complete
+ */
+export async function discoverFromX402Ecosystem(): Promise<DiscoveryResult[]> {
+  try {
+    // Try to fetch x402.org ecosystem page
+    const response = await fetch('https://www.x402.org/ecosystem', {
       headers: {
         'User-Agent': 'PulseRadar/1.0',
       },
     });
 
     if (!response.ok) {
-      console.error(`x402scan fetch failed: ${response.status}`);
+      console.log('x402.org ecosystem page not accessible');
       return [];
     }
 
-    const data = await response.json();
-
-    // Parse response and extract endpoints
-    // Format depends on x402scan's API structure
+    const html = await response.text();
     const results: DiscoveryResult[] = [];
 
-    if (Array.isArray(data)) {
-      for (const agent of data) {
-        // Try to fetch agent manifest
-        const agentUrl = agent.url || agent.agent_address || agent.endpoint;
-        if (agentUrl) {
-          const manifest = await fetchAgentManifest(agentUrl);
-          if (manifest) {
-            results.push({
-              url: agentUrl,
-              name: manifest.name || agent.name || 'Unknown',
-              description: manifest.description || agent.description,
-              author: manifest.author || agent.author,
-              organization: manifest.organization || agent.organization,
-              source: 'x402scan',
-            });
-          }
+    // Extract URLs that look like x402 agents (basic regex)
+    const urlPattern = /https?:\/\/[^\s<>"]+?(?:\.up\.railway\.app|\.workers\.dev|\.vercel\.app|\.herokuapp\.com)/g;
+    const urls = [...new Set(html.match(urlPattern) || [])];
+
+    console.log(`Found ${urls.length} potential endpoints on x402.org/ecosystem`);
+
+    for (const url of urls.slice(0, 20)) { // Limit to 20 to avoid timeout
+      try {
+        const manifest = await fetchAgentManifest(url);
+        if (manifest) {
+          results.push({
+            url,
+            name: manifest.name || 'Unknown',
+            description: manifest.description || null,
+            author: manifest.author || null,
+            organization: manifest.organization || null,
+            source: 'x402_ecosystem',
+          });
         }
+      } catch (error) {
+        // Silent fail - many URLs won't be x402 agents
       }
     }
 
     return results;
   } catch (error) {
-    console.error('Error discovering from x402scan:', error);
+    console.error('Error discovering from x402 ecosystem:', error);
     return [];
   }
 }
@@ -195,20 +257,24 @@ export async function saveDiscoveredEndpoints(
 
 /**
  * Run full discovery process
+ * TODO: Replace seed list with x402index.com API once payment integration is complete
  */
 export async function runDiscovery(env: Env): Promise<{
   total_discovered: number;
   new_endpoints: number;
 }> {
   console.log('Starting endpoint discovery...');
+  console.log('⚠️  Using seed list + scraping (temporary workaround)');
+  console.log('TODO: Integrate x402index.com API with payment');
 
-  // Discover from multiple sources
-  const [x402Results, githubResults] = await Promise.all([
-    discoverFromX402Scan(),
+  // Discover from multiple sources (temporary free methods)
+  const [seedResults, ecosystemResults, githubResults] = await Promise.all([
+    discoverFromSeedList(),
+    discoverFromX402Ecosystem(),
     discoverFromGitHub(),
   ]);
 
-  const allDiscoveries = [...x402Results, ...githubResults];
+  const allDiscoveries = [...seedResults, ...ecosystemResults, ...githubResults];
 
   // Remove duplicates based on URL
   const uniqueDiscoveries = Array.from(
@@ -216,6 +282,9 @@ export async function runDiscovery(env: Env): Promise<{
   );
 
   console.log(`Discovered ${uniqueDiscoveries.length} unique endpoints`);
+  console.log(`  - Seed list: ${seedResults.length}`);
+  console.log(`  - Ecosystem: ${ecosystemResults.length}`);
+  console.log(`  - GitHub: ${githubResults.length}`);
 
   // Save to database
   const newCount = await saveDiscoveredEndpoints(env, uniqueDiscoveries);
