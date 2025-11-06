@@ -1,19 +1,23 @@
 /**
  * Discovery Engine - Finds x402 endpoints from various sources
- *
- * TODO: Implement proper x402index.com integration with payment
- * - Use https://www.x402index.com/api/all with X-PAYMENT header
- * - Cost: $0.01 USDC per discovery run on Base network
- * - This is the official, maintained registry
- *
- * Current implementation uses free seed list + GitHub discovery as temporary workaround
  */
 
 import type { Env, DiscoveryResult, AgentManifest } from '../types';
 
 /**
- * Seed list of known x402 agents
- * TODO: Replace with x402index.com API once payment integration is implemented
+ * x402index.com payment configuration
+ */
+const X402_INDEX_CONFIG = {
+  url: 'https://www.x402index.com/api/all',
+  paymentAddress: '0xe3e8b0f31951a6160dF7B940FBa372727748578d',
+  asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC on Base
+  amount: '10000', // $0.01 in micro-units
+  network: 'base',
+  timeout: 300,
+};
+
+/**
+ * Seed list of known x402 agents (fallback if x402index.com fails)
  */
 const KNOWN_X402_AGENTS = [
   // Your own services
@@ -33,8 +37,118 @@ const KNOWN_X402_AGENTS = [
 ];
 
 /**
- * Discover endpoints from seed list
- * This is a temporary solution until x402index payment integration is complete
+ * Discover endpoints from x402index.com (official registry)
+ * Uses payment proxy service to handle x402 payment generation
+ */
+export async function discoverFromX402Index(env: Env): Promise<DiscoveryResult[]> {
+  try {
+    console.log('x402index.com discovery check...');
+
+    // Check if proxy is configured
+    if (!env.X402_PROXY_URL || !env.X402_PROXY_API_KEY) {
+      console.warn('⚠️  X402_PROXY_URL or X402_PROXY_API_KEY not configured');
+      console.warn('   Skipping x402index.com (paid registry)');
+      console.warn('   Using seed list + ecosystem scraping as fallback');
+      return [];
+    }
+
+    console.log(`Calling payment proxy at ${env.X402_PROXY_URL}...`);
+
+    // Call payment proxy service
+    const response = await fetch(`${env.X402_PROXY_URL}/api/x402index`, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': env.X402_PROXY_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(45000), // 45 second timeout
+    });
+
+    if (!response.ok) {
+      console.error(`Payment proxy failed: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`Error details: ${errorText}`);
+      return [];
+    }
+
+    const proxyResult = await response.json() as any;
+
+    if (!proxyResult.success || !proxyResult.data) {
+      console.error('Invalid response from payment proxy');
+      return [];
+    }
+
+    const data = proxyResult.data;
+    const results: DiscoveryResult[] = [];
+
+    // Parse the response format (assuming it returns an array of agent URLs or objects)
+    if (Array.isArray(data)) {
+      console.log(`Received ${data.length} agents from x402index.com via proxy`);
+
+      // Process each agent entry
+      for (const entry of data) {
+        try {
+          // Entry might be a URL string or an object with url property
+          const url = typeof entry === 'string' ? entry : entry.url;
+
+          if (url) {
+            // Fetch manifest for each agent
+            const manifest = await fetchAgentManifest(url);
+            if (manifest) {
+              results.push({
+                url,
+                name: manifest.name || entry.name || 'Unknown Agent',
+                description: manifest.description || entry.description || undefined,
+                author: manifest.author || entry.author || undefined,
+                organization: manifest.organization || entry.organization || undefined,
+                source: 'x402_index',
+              });
+              console.log(`✓ Found from index: ${manifest.name} at ${url}`);
+            }
+          }
+        } catch (error) {
+          // Silent fail - continue processing other agents
+          console.log(`Could not fetch manifest for entry:`, error);
+        }
+      }
+    } else if (data.agents && Array.isArray(data.agents)) {
+      // Alternative response format with agents array
+      console.log(`Received ${data.agents.length} agents from x402index.com via proxy`);
+
+      for (const entry of data.agents) {
+        try {
+          const url = typeof entry === 'string' ? entry : entry.url;
+
+          if (url) {
+            const manifest = await fetchAgentManifest(url);
+            if (manifest) {
+              results.push({
+                url,
+                name: manifest.name || entry.name || 'Unknown Agent',
+                description: manifest.description || entry.description || undefined,
+                author: manifest.author || entry.author || undefined,
+                organization: manifest.organization || entry.organization || undefined,
+                source: 'x402_index',
+              });
+              console.log(`✓ Found from index: ${manifest.name} at ${url}`);
+            }
+          }
+        } catch (error) {
+          console.log(`Could not fetch manifest for entry:`, error);
+        }
+      }
+    }
+
+    console.log(`x402index.com discovery: ${results.length} active agents`);
+    return results;
+  } catch (error) {
+    console.error('Error discovering from x402index.com:', error);
+    return [];
+  }
+}
+
+/**
+ * Discover endpoints from seed list (fallback method)
  */
 export async function discoverFromSeedList(): Promise<DiscoveryResult[]> {
   const results: DiscoveryResult[] = [];
@@ -48,9 +162,9 @@ export async function discoverFromSeedList(): Promise<DiscoveryResult[]> {
         results.push({
           url,
           name: manifest.name || 'Unknown Agent',
-          description: manifest.description || null,
-          author: manifest.author || null,
-          organization: manifest.organization || null,
+          description: manifest.description || undefined,
+          author: manifest.author || undefined,
+          organization: manifest.organization || undefined,
           source: 'seed_list',
         });
         console.log(`✓ Found: ${manifest.name} at ${url}`);
@@ -100,9 +214,9 @@ export async function discoverFromX402Ecosystem(): Promise<DiscoveryResult[]> {
           results.push({
             url,
             name: manifest.name || 'Unknown',
-            description: manifest.description || null,
-            author: manifest.author || null,
-            organization: manifest.organization || null,
+            description: manifest.description || undefined,
+            author: manifest.author || undefined,
+            organization: manifest.organization || undefined,
             source: 'x402_ecosystem',
           });
         }
@@ -257,31 +371,48 @@ export async function saveDiscoveredEndpoints(
 
 /**
  * Run full discovery process
- * TODO: Replace seed list with x402index.com API once payment integration is complete
+ * Uses x402index.com official registry with fallback to seed list
  */
 export async function runDiscovery(env: Env): Promise<{
   total_discovered: number;
   new_endpoints: number;
 }> {
   console.log('Starting endpoint discovery...');
-  console.log('⚠️  Using seed list + scraping (temporary workaround)');
-  console.log('TODO: Integrate x402index.com API with payment');
 
-  // Discover from multiple sources (temporary free methods)
+  // Try x402index.com first (official registry with payment)
+  let indexResults: DiscoveryResult[] = [];
+  try {
+    indexResults = await discoverFromX402Index(env);
+  } catch (error) {
+    console.error('x402index.com discovery failed, will use fallback methods:', error);
+  }
+
+  // Run fallback methods in parallel
   const [seedResults, ecosystemResults, githubResults] = await Promise.all([
     discoverFromSeedList(),
     discoverFromX402Ecosystem(),
     discoverFromGitHub(),
   ]);
 
-  const allDiscoveries = [...seedResults, ...ecosystemResults, ...githubResults];
+  // Combine all discoveries
+  const allDiscoveries = [...indexResults, ...seedResults, ...ecosystemResults, ...githubResults];
 
-  // Remove duplicates based on URL
+  // Remove duplicates based on URL (prioritize x402_index source)
   const uniqueDiscoveries = Array.from(
-    new Map(allDiscoveries.map(d => [d.url, d])).values()
+    new Map(
+      allDiscoveries
+        .sort((a, b) => {
+          // Prioritize x402_index results
+          if (a.source === 'x402_index' && b.source !== 'x402_index') return -1;
+          if (a.source !== 'x402_index' && b.source === 'x402_index') return 1;
+          return 0;
+        })
+        .map(d => [d.url, d])
+    ).values()
   );
 
   console.log(`Discovered ${uniqueDiscoveries.length} unique endpoints`);
+  console.log(`  - x402index.com: ${indexResults.length}`);
   console.log(`  - Seed list: ${seedResults.length}`);
   console.log(`  - Ecosystem: ${ecosystemResults.length}`);
   console.log(`  - GitHub: ${githubResults.length}`);

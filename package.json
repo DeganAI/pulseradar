@@ -11,7 +11,11 @@
     "db:migrate": "wrangler d1 migrations apply pulseradar-db",
     "db:local": "wrangler d1 migrations apply pulseradar-db --local"
   },
-  "keywords": ["x402", "cloudflare-workers", "trust-scoring"],
+  "keywords": [
+    "x402",
+    "cloudflare-workers",
+    "trust-scoring"
+  ],
   "author": "DegenLlama.net",
   "license": "MIT",
   "devDependencies": {
@@ -19,5 +23,10 @@
     "@types/node": "^20.10.0",
     "typescript": "^5.3.3",
     "wrangler": "^3.80.0"
+  },
+  "dependencies": {
+    "@lucid-dreams/agent-kit": "^0.2.24",
+    "hono": "^4.10.4",
+    "zod-to-json-schema": "^3.24.6"
   }
 }
