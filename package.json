@@ -25,7 +25,6 @@
     "wrangler": "^3.80.0"
   },
   "dependencies": {
-    "@lucid-dreams/agent-kit": "^0.2.24",
     "hono": "^4.10.4",
     "zod-to-json-schema": "^3.24.6"
   }
